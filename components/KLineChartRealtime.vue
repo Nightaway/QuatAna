@@ -57,26 +57,26 @@ onMounted(async () => {
       candle: {
         type: 'candle_solid',
         bar: {
-          upColor: '#26A69A',
-          downColor: '#EF5350',
-          upBorderColor: '#26A69A',
-          downBorderColor: '#EF5350',
-          upWickColor: '#26A69A',
-          downWickColor: '#EF5350'
+          upColor: '#22c55e',
+          downColor: '#ef4444',
+          upBorderColor: '#22c55e',
+          downBorderColor: '#ef4444',
+          upWickColor: '#22c55e',
+          downWickColor: '#ef4444'
         },
         priceMark: {
           high: {
             show: true,
-            color: '#76808F'
+            color: '#888'
           },
           low: {
             show: true,
-            color: '#76808F'
+            color: '#888'
           },
           last: {
             show: true,
-            upColor: '#26A69A',
-            downColor: '#EF5350',
+            upColor: '#22c55e',
+            downColor: '#ef4444',
             line: {
               show: true,
               style: 'dashed'
@@ -88,7 +88,7 @@ onMounted(async () => {
         show: true,
         horizontal: {
           show: true,
-          color: '#2B2B43'
+          color: '#e0e0e0'
         },
         vertical: {
           show: false
@@ -101,7 +101,7 @@ onMounted(async () => {
           line: {
             show: true,
             style: 'dashed',
-            color: '#76808F'
+            color: '#888'
           }
         },
         vertical: {
@@ -109,7 +109,7 @@ onMounted(async () => {
           line: {
             show: true,
             style: 'dashed',
-            color: '#76808F'
+            color: '#888'
           }
         }
       }
@@ -157,8 +157,8 @@ onMounted(async () => {
       styles: {
         bars: [
           {
-            upColor: 'rgba(38, 166, 154, 0.7)',
-            downColor: 'rgba(239, 83, 80, 0.7)',
+            upColor: 'rgba(34, 197, 94, 0.7)',
+            downColor: 'rgba(239, 68, 68, 0.7)',
             noChangeColor: '#888888'
           }
         ],
@@ -333,7 +333,7 @@ onUnmounted(() => {
   width: 100%;
   min-height: 100vh;
   padding: 20px;
-  background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+  background: linear-gradient(135deg, #f5f7fa 0%, #e4e8ec 100%);
   box-sizing: border-box;
   animation: fadeIn 0.6s ease-out;
 }
@@ -341,10 +341,10 @@ onUnmounted(() => {
 .header {
   margin-bottom: 20px;
   padding: 25px;
-  background: rgba(255, 255, 255, 0.05);
+  background: #fff;
   border-radius: 12px;
-  backdrop-filter: blur(10px);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border: 1px solid #e0e0e0;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
 }
 
 .title-section {
@@ -357,11 +357,10 @@ onUnmounted(() => {
 }
 
 .header h1 {
-  color: #fff;
+  color: #333;
   margin: 0;
   font-size: 28px;
   font-weight: 600;
-  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
   display: flex;
   align-items: center;
   gap: 10px;
@@ -399,21 +398,21 @@ onUnmounted(() => {
 }
 
 .badge-success {
-  background: rgba(38, 166, 154, 0.2);
-  color: #26A69A;
-  border: 1px solid rgba(38, 166, 154, 0.3);
+  background: rgba(34, 197, 94, 0.1);
+  color: #22c55e;
+  border: 1px solid rgba(34, 197, 94, 0.3);
 }
 
 .badge-error {
-  background: rgba(239, 83, 80, 0.2);
-  color: #EF5350;
-  border: 1px solid rgba(239, 83, 80, 0.3);
+  background: rgba(239, 68, 68, 0.1);
+  color: #ef4444;
+  border: 1px solid rgba(239, 68, 68, 0.3);
 }
 
 .badge-info {
-  background: rgba(33, 150, 243, 0.2);
-  color: #2196F3;
-  border: 1px solid rgba(33, 150, 243, 0.3);
+  background: rgba(59, 130, 246, 0.1);
+  color: #3b82f6;
+  border: 1px solid rgba(59, 130, 246, 0.3);
 }
 
 .dot {
@@ -442,7 +441,7 @@ onUnmounted(() => {
 }
 
 .data-source {
-  color: #b0b0b0;
+  color: #888;
   margin: 0;
   font-size: 14px;
   letter-spacing: 0.5px;
@@ -465,7 +464,7 @@ onUnmounted(() => {
 }
 
 .stat-item .value {
-  color: #26A69A;
+  color: #333;
   font-weight: 600;
 }
 
@@ -484,11 +483,10 @@ onUnmounted(() => {
 .loading-spinner {
   width: 50px;
   height: 50px;
-  border: 4px solid rgba(255, 255, 255, 0.1);
-  border-top-color: #26A69A;
+  border: 4px solid #e0e0e0;
+  border-top-color: #333;
   border-radius: 50%;
   animation: spin 1s linear infinite;
-  box-shadow: 0 0 20px rgba(38, 166, 154, 0.3);
 }
 
 @keyframes spin {
@@ -498,7 +496,7 @@ onUnmounted(() => {
 }
 
 .status-overlay p {
-  color: #b0b0b0;
+  color: #666;
   font-size: 16px;
   letter-spacing: 1px;
 }
@@ -506,8 +504,8 @@ onUnmounted(() => {
 .error-message {
   text-align: center;
   padding: 40px;
-  background: rgba(239, 83, 80, 0.1);
-  border: 1px solid rgba(239, 83, 80, 0.3);
+  background: rgba(239, 68, 68, 0.05);
+  border: 1px solid rgba(239, 68, 68, 0.2);
   border-radius: 12px;
   margin-bottom: 20px;
 }
@@ -518,13 +516,13 @@ onUnmounted(() => {
 }
 
 .error-message h3 {
-  color: #EF5350;
+  color: #ef4444;
   margin: 0 0 10px 0;
   font-size: 20px;
 }
 
 .error-message p {
-  color: #b0b0b0;
+  color: #888;
   margin: 0;
   font-size: 14px;
 }
@@ -532,11 +530,10 @@ onUnmounted(() => {
 .chart {
   width: 100%;
   height: 700px;
-  background-color: #1e222d;
+  background-color: #fff;
   border-radius: 12px;
-  box-shadow: 
-    0 10px 30px rgba(0, 0, 0, 0.3),
-    0 0 0 1px rgba(255, 255, 255, 0.1);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+  border: 1px solid #e0e0e0;
   overflow: hidden;
   transition: opacity 0.3s;
 }
@@ -548,9 +545,10 @@ onUnmounted(() => {
 .footer {
   margin-top: 20px;
   padding: 20px;
-  background: rgba(255, 255, 255, 0.03);
+  background: #fff;
   border-radius: 12px;
-  border: 1px solid rgba(255, 255, 255, 0.05);
+  border: 1px solid #e0e0e0;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
 }
 
 .feature-tags {
@@ -562,38 +560,38 @@ onUnmounted(() => {
 
 .tag {
   padding: 8px 16px;
-  background: rgba(38, 166, 154, 0.1);
-  color: #26A69A;
+  background: #f5f5f5;
+  color: #555;
   border-radius: 6px;
   font-size: 13px;
   font-weight: 500;
-  border: 1px solid rgba(38, 166, 154, 0.2);
+  border: 1px solid #e0e0e0;
 }
 
 @media (max-width: 768px) {
   .kline-container {
     padding: 10px;
   }
-  
+
   .chart {
     height: 500px;
     border-radius: 8px;
   }
-  
+
   .header {
     padding: 15px;
     margin-bottom: 15px;
   }
-  
+
   .header h1 {
     font-size: 22px;
   }
-  
+
   .title-section {
     flex-direction: column;
     align-items: flex-start;
   }
-  
+
   .info-section {
     flex-direction: column;
     align-items: flex-start;

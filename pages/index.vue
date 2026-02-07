@@ -1,56 +1,33 @@
 <template>
-  <div style="padding: 40px; text-align: center; background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%); min-height: 100vh; color: white;">
-    <h1 style="font-size: 48px; margin-bottom: 20px;">📊 K线图系统</h1>
-    <p style="font-size: 18px; color: #b0b0b0; margin-bottom: 40px;">选择要查看的版本</p>
-    
-    <div style="display: flex; gap: 30px; justify-content: center; flex-wrap: wrap; max-width: 800px; margin: 0 auto;">
+  <div class="home-page">
+    <h1 class="title">K线图系统</h1>
+    <p class="subtitle">选择要查看的版本</p>
+
+    <div class="cards-container">
       <!-- 静态数据卡片 -->
-      <NuxtLink 
-        to="/static" 
-        style="
-          display: block;
-          flex: 1;
-          min-width: 280px;
-          padding: 40px;
-          background: rgba(255, 255, 255, 0.05);
-          border-radius: 12px;
-          text-decoration: none;
-          color: white;
-          border: 1px solid rgba(255, 255, 255, 0.1);
-          transition: all 0.3s ease;
-        "
-      >
-        <div style="font-size: 60px; margin-bottom: 20px;">📈</div>
-        <h2 style="margin: 0 0 10px 0;">静态数据版本</h2>
-        <p style="color: #b0b0b0; font-size: 14px; margin: 0;">使用本地 JSON 数据<br>快速加载 • 离线可用</p>
+      <NuxtLink to="/static" class="card">
+        <div class="card-icon">📈</div>
+        <h2>静态数据版本</h2>
+        <p>使用本地 JSON 数据<br>快速加载 · 离线可用</p>
       </NuxtLink>
-      
+
       <!-- 实时数据卡片 -->
-      <NuxtLink 
-        to="/realtime" 
-        style="
-          display: block;
-          flex: 1;
-          min-width: 280px;
-          padding: 40px;
-          background: rgba(38, 166, 154, 0.1);
-          border-radius: 12px;
-          text-decoration: none;
-          color: white;
-          border: 1px solid rgba(38, 166, 154, 0.3);
-          transition: all 0.3s ease;
-        "
-      >
-        <div style="font-size: 60px; margin-bottom: 20px;">🔴</div>
-        <h2 style="margin: 0 0 10px 0;">实时数据版本</h2>
-        <p style="color: #b0b0b0; font-size: 14px; margin: 0;">OKX WebSocket 实时推送<br>生产环境 • 实时更新</p>
+      <NuxtLink to="/realtime" class="card card-highlight">
+        <div class="card-icon">🔴</div>
+        <h2>实时数据版本</h2>
+        <p>OKX WebSocket 实时推送<br>生产环境 · 实时更新</p>
+      </NuxtLink>
+
+      <!-- 策略回测卡片 -->
+      <NuxtLink to="/backtest" class="card">
+        <div class="card-icon">🧪</div>
+        <h2>策略回测</h2>
+        <p>离线策略测试<br>支持做空 · 绩效分析</p>
       </NuxtLink>
     </div>
 
-    <div style="margin-top: 60px; padding: 20px; background: rgba(255, 255, 255, 0.03); border-radius: 8px; max-width: 600px; margin: 60px auto 0;">
-      <p style="color: #888; font-size: 14px; margin: 0;">
-        基于 KLineChart + Nuxt 3 + OKX API
-      </p>
+    <div class="footer">
+      <p>基于 KLineChart + Nuxt 3 + OKX API</p>
     </div>
   </div>
 </template>
@@ -63,4 +40,91 @@ useHead({
   ]
 })
 </script>
+
+<style scoped>
+.home-page {
+  padding: 40px;
+  text-align: center;
+  background: linear-gradient(135deg, #f5f7fa 0%, #e4e8ec 50%, #d5dbe3 100%);
+  min-height: 100vh;
+}
+
+.title {
+  font-size: 48px;
+  margin-bottom: 20px;
+  color: #333;
+}
+
+.subtitle {
+  font-size: 18px;
+  color: #888;
+  margin-bottom: 40px;
+}
+
+.cards-container {
+  display: flex;
+  gap: 30px;
+  justify-content: center;
+  flex-wrap: wrap;
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.card {
+  display: block;
+  flex: 1;
+  min-width: 280px;
+  padding: 40px;
+  background: #fff;
+  border-radius: 12px;
+  text-decoration: none;
+  color: #333;
+  border: 1px solid #e0e0e0;
+  transition: all 0.3s ease;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+}
+
+.card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.1);
+}
+
+.card-highlight {
+  background: #f9f9f9;
+  border-color: #ccc;
+}
+
+.card-icon {
+  font-size: 60px;
+  margin-bottom: 20px;
+}
+
+.card h2 {
+  margin: 0 0 10px 0;
+  font-size: 20px;
+  font-weight: 600;
+}
+
+.card p {
+  color: #888;
+  font-size: 14px;
+  margin: 0;
+  line-height: 1.6;
+}
+
+.footer {
+  margin-top: 60px;
+  padding: 20px;
+  background: rgba(0, 0, 0, 0.03);
+  border-radius: 8px;
+  max-width: 600px;
+  margin: 60px auto 0;
+}
+
+.footer p {
+  color: #888;
+  font-size: 14px;
+  margin: 0;
+}
+</style>
 

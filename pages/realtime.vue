@@ -49,20 +49,17 @@ useHead({
   align-items: center;
   justify-content: center;
   min-height: 100vh;
-  background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+  background: linear-gradient(135deg, #f5f7fa 0%, #e4e8ec 100%);
 }
 
 .loading-spinner {
   width: 60px;
   height: 60px;
-  border: 5px solid rgba(255, 255, 255, 0.1);
-  border-top-color: #26A69A;
-  border-right-color: #2196F3;
+  border: 5px solid #e0e0e0;
+  border-top-color: #333;
+  border-right-color: #666;
   border-radius: 50%;
   animation: spin 1s linear infinite;
-  box-shadow: 
-    0 0 30px rgba(38, 166, 154, 0.4),
-    0 0 50px rgba(33, 150, 243, 0.2);
 }
 
 @keyframes spin {
@@ -73,11 +70,10 @@ useHead({
 
 .loading-container p {
   margin-top: 20px;
-  color: #fff;
+  color: #333;
   font-size: 18px;
   font-weight: 600;
   letter-spacing: 1px;
-  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
 }
 
 .loading-tips {
@@ -113,23 +109,23 @@ useHead({
 }
 
 .btn-home {
-  background: linear-gradient(135deg, #9C27B0 0%, #673AB7 100%);
-  box-shadow: 0 4px 15px rgba(156, 39, 176, 0.3);
+  background: #333;
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
 }
 
 .btn-home:hover {
   transform: translateY(-2px);
-  box-shadow: 0 6px 20px rgba(156, 39, 176, 0.4);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.3);
 }
 
 .btn-static {
-  background: linear-gradient(135deg, #2196F3 0%, #00BCD4 100%);
-  box-shadow: 0 4px 15px rgba(33, 150, 243, 0.3);
+  background: #555;
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
 }
 
 .btn-static:hover {
   transform: translateY(-2px);
-  box-shadow: 0 6px 20px rgba(33, 150, 243, 0.4);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.3);
 }
 
 .btn .icon {
@@ -141,7 +137,7 @@ useHead({
     bottom: 20px;
     right: 20px;
   }
-  
+
   .btn {
     padding: 10px 16px;
     font-size: 12px;

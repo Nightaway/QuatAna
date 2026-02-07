@@ -8,9 +8,9 @@ const KLineChart = defineAsyncComponent(() =>
 
 // 设置页面元数据
 useHead({
-  title: 'K线图 - 静态数据演示',
+  title: 'K线图 - 恒生科技指数',
   meta: [
-    { name: 'description', content: '基于 KLineChart 的 ETH/USDT 日线K线图，使用静态数据' }
+    { name: 'description', content: '基于 KLineChart 的恒生科技指数日线K线图' }
   ]
 })
 </script>
@@ -48,17 +48,16 @@ useHead({
   align-items: center;
   justify-content: center;
   min-height: 100vh;
-  background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+  background: linear-gradient(135deg, #f5f7fa 0%, #e4e8ec 100%);
 }
 
 .loading-spinner {
   width: 50px;
   height: 50px;
-  border: 4px solid rgba(255, 255, 255, 0.1);
-  border-top-color: #26A69A;
+  border: 4px solid #e0e0e0;
+  border-top-color: #333;
   border-radius: 50%;
   animation: spin 1s linear infinite;
-  box-shadow: 0 0 20px rgba(38, 166, 154, 0.3);
 }
 
 @keyframes spin {
@@ -69,10 +68,9 @@ useHead({
 
 .loading-container p {
   margin-top: 20px;
-  color: #b0b0b0;
+  color: #666;
   font-size: 16px;
   letter-spacing: 1px;
-  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
 }
 
 .nav-buttons {
@@ -100,37 +98,27 @@ useHead({
 }
 
 .btn-home {
-  background: linear-gradient(135deg, #9C27B0 0%, #673AB7 100%);
-  box-shadow: 0 4px 15px rgba(156, 39, 176, 0.3);
+  background: #333;
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
 }
 
 .btn-home:hover {
   transform: translateY(-2px);
-  box-shadow: 0 6px 20px rgba(156, 39, 176, 0.4);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.3);
 }
 
 .btn-realtime {
-  background: linear-gradient(135deg, #EF5350 0%, #E91E63 100%);
-  box-shadow: 0 4px 15px rgba(239, 83, 80, 0.3);
-  animation: pulse-glow 2s ease-in-out infinite;
+  background: #555;
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
 }
 
 .btn-realtime:hover {
   transform: translateY(-2px);
-  box-shadow: 0 6px 20px rgba(239, 83, 80, 0.4);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.3);
 }
 
 .btn .icon {
   font-size: 16px;
-}
-
-@keyframes pulse-glow {
-  0%, 100% {
-    box-shadow: 0 4px 15px rgba(239, 83, 80, 0.3);
-  }
-  50% {
-    box-shadow: 0 4px 20px rgba(239, 83, 80, 0.5);
-  }
 }
 
 @media (max-width: 768px) {
@@ -138,7 +126,7 @@ useHead({
     bottom: 20px;
     right: 20px;
   }
-  
+
   .btn {
     padding: 10px 16px;
     font-size: 12px;
