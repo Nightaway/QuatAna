@@ -2,11 +2,8 @@
 import { onMounted, onUnmounted, ref, nextTick, watch } from 'vue'
 import { init, dispose, registerOverlay } from 'klinecharts'
 
-// 从JSON文件导入数据
-import dailyData from '../public/hstech_daily_20200701_20260205.json'
-
 // 导入趋势识别工具
-import { detectTrends, TREND_COLORS, TREND_NAMES, getTrendStats } from '../utils/trendDetector'
+import { detectTrends, TREND_COLORS, TREND_NAMES, getTrendStats, computeAdaptiveParams } from '../utils/trendDetector'
 
 // 导入布林带计算
 import { calculateBOLL } from '../utils/indicators'
@@ -19,6 +16,8 @@ const showTrendLines = ref(false)
 const sidewaysThreshold = ref(1)  // 横盘阈值百分比
 const minTrendLength = ref(2)     // 最小趋势长度
 const trendStats = ref(null)      // 趋势统计信息
+const adaptiveStats = ref(null)   // 自适应参数统计信息
+const recommendedParams = ref({ sidewaysThreshold: 1, minTrendLength: 2 }) // 推荐参数
 let trendOverlayIds = []          // 存储已创建的趋势线overlay ID
 let currentKlineData = []         // 当前K线数据缓存
 
@@ -39,8 +38,26 @@ let bollExtremeOverlayIds = []
 // 跳空缺口相关状态
 const showGaps = ref(false)
 const gapThreshold = ref(0.5)    // 缺口最小幅度百分比
+const showGapValues = ref(true)  // 是否在缺口上显示数值
+const showGapEdgeValues = ref(false) // 是否在缺口上下沿显示价格
 const gapStats = ref(null)       // 缺口统计信息
 let gapOverlayIds = []           // 存储已创建的缺口overlay ID
+
+// 跳空缺口突破布林带相关状态
+const showGapBollBreakthrough = ref(false)  // 缺口突破布林带开关
+const gapBollStats = ref(null)              // { total, upper, middle, lower }
+let gapBollMarkerOverlayIds = []            // 突破标记 overlay ID
+
+// 技术指标开关状态
+const showBOLL = ref(true)   // 布林带（主图叠加）
+const showVOL = ref(true)    // 成交量（独立窗口）
+const showMACD = ref(true)   // MACD（独立窗口）
+const showRSI = ref(true)    // RSI（独立窗口）
+
+// 各指标 ID（createIndicator 返回的是 indicator ID，用于移除）
+let volIndicatorId = null
+let macdIndicatorId = null
+let rsiIndicatorId = null
 
 // 注册自定义趋势线 overlay（加粗线段 + 转折点圆圈）
 registerOverlay({
@@ -164,6 +181,64 @@ registerOverlay({
       }
     })
 
+    // 缺口数值标注
+    if (overlay.extendData?.showValues) {
+      const centerX = (Math.min(x1, x2) + Math.max(x1, x2)) / 2
+      const centerY = (y1 + y2) / 2
+      const gapPercent = overlay.extendData.gapPercent
+      const gapSize = overlay.extendData.gapSize
+      const isUp = overlay.extendData.gapType === 'up'
+      const sign = isUp ? '+' : '-'
+      const label = `${sign}${gapPercent}% (${gapSize.toFixed(2)})`
+      const textColor = isUp ? '#fff' : '#fff'
+      const bgColor = isUp ? 'rgba(22, 163, 74, 0.85)' : 'rgba(220, 38, 38, 0.85)'
+
+      // 文字背景
+      const textWidth = label.length * 8
+      const textHeight = 18
+      figures.push({
+        type: 'rect',
+        attrs: {
+          x: centerX - textWidth / 2 - 4,
+          y: centerY - textHeight / 2,
+          width: textWidth + 8,
+          height: textHeight
+        },
+        styles: { style: 'fill', color: bgColor, borderRadius: 3 }
+      })
+      figures.push({
+        type: 'text',
+        attrs: { x: centerX, y: centerY, text: label },
+        styles: {
+          color: textColor,
+          size: 12,
+          family: 'monospace',
+          weight: 'bold'
+        }
+      })
+    }
+
+    // 缺口上下沿价格标注
+    if (overlay.extendData?.showEdgeValues) {
+      const gapTop = overlay.extendData.gapTop
+      const gapBottom = overlay.extendData.gapBottom
+      const rightX = Math.max(x1, x2) + 4
+      const edgeColor = '#fff'
+
+      // 上沿价格
+      figures.push({
+        type: 'text',
+        attrs: { x: rightX, y: Math.min(y1, y2) + 2, text: gapTop.toFixed(2) },
+        styles: { color: edgeColor, size: 12, family: 'monospace', weight: 'bold' }
+      })
+      // 下沿价格
+      figures.push({
+        type: 'text',
+        attrs: { x: rightX, y: Math.max(y1, y2) - 2, text: gapBottom.toFixed(2) },
+        styles: { color: edgeColor, size: 12, family: 'monospace', weight: 'bold' }
+      })
+    }
+
     return figures
   }
 })
@@ -213,6 +288,37 @@ registerOverlay({
   }
 })
 
+// 注册跳空缺口突破布林带标记 overlay（菱形标记）
+registerOverlay({
+  name: 'gapBollMarker',
+  needDefaultPointFigure: false,
+  needDefaultXAxisFigure: false,
+  needDefaultYAxisFigure: false,
+  totalStep: 2,
+  createPointFigures: ({ coordinates, overlay }) => {
+    if (coordinates.length < 1) return []
+    const bandColors = { upper: '#FF6D00', middle: '#2196F3', lower: '#00C853' }
+    const color = bandColors[overlay.extendData?.band] || '#888'
+    const label = overlay.extendData?.label || ''
+    const x = coordinates[0].x, y = coordinates[0].y, size = 6
+    const points = [
+      { x, y: y - size }, { x: x + size, y },
+      { x, y: y + size }, { x: x - size, y }
+    ]
+    const figures = [{
+      type: 'polygon',
+      attrs: { coordinates: points },
+      styles: { style: 'fill', color }
+    }]
+    figures.push({
+      type: 'text',
+      attrs: { x: x + size + 3, y: y, text: label },
+      styles: { color, size: 11, family: 'sans-serif', weight: 'bold' }
+    })
+    return figures
+  }
+})
+
 // 检测跳空缺口
 const detectGaps = (data, threshold = 0.5) => {
   const gaps = []
@@ -259,6 +365,24 @@ const detectGaps = (data, threshold = 0.5) => {
   return gaps
 }
 
+// 检测跳空缺口突破布林带
+const detectGapBollBreakthroughs = (gaps, data, period, stdDev) => {
+  const boll = calculateBOLL(data, period, stdDev)
+  return gaps.map(gap => {
+    const idx = gap.index
+    const breakthroughs = []
+    if (boll.upper[idx] === null) return { ...gap, bollBreakthroughs: breakthroughs }
+    const top = gap.gapTop, bottom = gap.gapBottom
+    if (boll.upper[idx] >= bottom && boll.upper[idx] <= top)
+      breakthroughs.push({ band: 'upper', label: '上轨', value: boll.upper[idx] })
+    if (boll.middle[idx] >= bottom && boll.middle[idx] <= top)
+      breakthroughs.push({ band: 'middle', label: '中轨', value: boll.middle[idx] })
+    if (boll.lower[idx] >= bottom && boll.lower[idx] <= top)
+      breakthroughs.push({ band: 'lower', label: '下轨', value: boll.lower[idx] })
+    return { ...gap, bollBreakthroughs: breakthroughs }
+  })
+}
+
 // 清除所有缺口标记
 const clearGaps = () => {
   if (!chart) return
@@ -267,6 +391,11 @@ const clearGaps = () => {
   })
   gapOverlayIds = []
   gapStats.value = null
+  gapBollMarkerOverlayIds.forEach(id => {
+    chart.removeOverlay({ id })
+  })
+  gapBollMarkerOverlayIds = []
+  gapBollStats.value = null
 }
 
 // 绘制跳空缺口
@@ -275,11 +404,29 @@ const drawGaps = () => {
 
   clearGaps()
 
-  const gaps = detectGaps(currentKlineData, gapThreshold.value)
+  let gaps = detectGaps(currentKlineData, gapThreshold.value)
 
   if (gaps.length === 0) {
     gapStats.value = { total: 0, up: 0, down: 0 }
     return
+  }
+
+  // 如果开启了BOLL突破检测，丰富gaps数据
+  if (showGapBollBreakthrough.value) {
+    gaps = detectGapBollBreakthroughs(gaps, currentKlineData, bollPeriod.value, bollStdDev.value)
+    // 计算突破统计
+    let upperCount = 0, middleCount = 0, lowerCount = 0
+    gaps.forEach(g => {
+      if (g.bollBreakthroughs) {
+        g.bollBreakthroughs.forEach(bt => {
+          if (bt.band === 'upper') upperCount++
+          else if (bt.band === 'middle') middleCount++
+          else if (bt.band === 'lower') lowerCount++
+        })
+      }
+    })
+    const totalBt = upperCount + middleCount + lowerCount
+    gapBollStats.value = { total: totalBt, upper: upperCount, middle: middleCount, lower: lowerCount }
   }
 
   const upCount = gaps.filter(g => g.type === 'up').length
@@ -288,8 +435,13 @@ const drawGaps = () => {
 
   gaps.forEach(gap => {
     const isUp = gap.type === 'up'
-    const color = isUp ? 'rgba(34, 197, 94, 0.15)' : 'rgba(239, 68, 68, 0.15)'
-    const borderColor = isUp ? 'rgba(34, 197, 94, 0.6)' : 'rgba(239, 68, 68, 0.6)'
+    const hasBollBreakthrough = showGapBollBreakthrough.value && gap.bollBreakthroughs && gap.bollBreakthroughs.length > 0
+    const color = isUp
+      ? (hasBollBreakthrough ? 'rgba(34, 197, 94, 0.50)' : 'rgba(34, 197, 94, 0.35)')
+      : (hasBollBreakthrough ? 'rgba(239, 68, 68, 0.50)' : 'rgba(239, 68, 68, 0.35)')
+    const borderColor = isUp
+      ? (hasBollBreakthrough ? 'rgba(34, 197, 94, 1.0)' : 'rgba(34, 197, 94, 0.85)')
+      : (hasBollBreakthrough ? 'rgba(239, 68, 68, 1.0)' : 'rgba(239, 68, 68, 0.85)')
 
     const overlayId = chart.createOverlay({
       name: 'gapZone',
@@ -297,13 +449,31 @@ const drawGaps = () => {
         { timestamp: gap.prevTimestamp, value: gap.gapTop },
         { timestamp: gap.currTimestamp, value: gap.gapBottom }
       ],
-      extendData: { color, borderColor },
+      extendData: { color, borderColor, gapSize: gap.gapSize, gapPercent: gap.gapPercent, gapType: gap.type, showValues: showGapValues.value, showEdgeValues: showGapEdgeValues.value, gapTop: gap.gapTop, gapBottom: gap.gapBottom },
       lock: true,
       visible: true
     })
 
     if (overlayId) {
       gapOverlayIds.push(overlayId)
+    }
+
+    // 为每个BOLL突破点创建菱形标记
+    if (hasBollBreakthrough) {
+      gap.bollBreakthroughs.forEach(bt => {
+        const markerId = chart.createOverlay({
+          name: 'gapBollMarker',
+          points: [
+            { timestamp: gap.currTimestamp, value: bt.value }
+          ],
+          extendData: { band: bt.band, label: bt.label },
+          lock: true,
+          visible: true
+        })
+        if (markerId) {
+          gapBollMarkerOverlayIds.push(markerId)
+        }
+      })
     }
   })
 
@@ -325,6 +495,105 @@ watch(gapThreshold, () => {
     drawGaps()
   }
 })
+
+// 监听缺口数值显示变化
+watch(showGapValues, () => {
+  if (showGaps.value) {
+    drawGaps()
+  }
+})
+
+// 监听缺口上下沿价格显示变化
+watch(showGapEdgeValues, () => {
+  if (showGaps.value) {
+    drawGaps()
+  }
+})
+
+// 监听缺口突破布林带开关变化
+watch(showGapBollBreakthrough, () => {
+  if (showGaps.value) {
+    drawGaps()
+  }
+})
+
+// 创建各技术指标的函数
+const createBOLL = () => {
+  chart.createIndicator({
+    name: 'BOLL',
+    calcParams: [20, 2],
+    precision: 2,
+    styles: {
+      lines: [
+        { style: 'solid', smooth: false, size: 1, color: '#FF6D00' },
+        { style: 'solid', smooth: false, size: 1, color: '#2196F3' },
+        { style: 'solid', smooth: false, size: 1, color: '#00C853' }
+      ]
+    }
+  }, true, { id: 'candle_pane' })
+}
+const createVOL = () => {
+  volIndicatorId = chart.createIndicator('VOL', false)
+}
+const createMACD = () => {
+  macdIndicatorId = chart.createIndicator({
+    name: 'MACD',
+    calcParams: [12, 26, 9],
+    precision: 2,
+    styles: {
+      bars: [{ upColor: 'rgba(34, 197, 94, 0.7)', downColor: 'rgba(239, 68, 68, 0.7)', noChangeColor: '#888888' }],
+      lines: [
+        { style: 'solid', smooth: false, size: 1, color: '#FF6D00' },
+        { style: 'solid', smooth: false, size: 1, color: '#2196F3' }
+      ]
+    }
+  }, false)
+}
+const createRSI = () => {
+  rsiIndicatorId = chart.createIndicator({
+    name: 'RSI',
+    calcParams: [14],
+    precision: 2,
+    styles: {
+      lines: [{ style: 'solid', smooth: false, size: 2, color: '#FF6D00' }]
+    }
+  }, false)
+}
+
+// 关闭所有技术指标
+const closeAllIndicators = () => {
+  if (!chart) return
+  showBOLL.value = false
+  showVOL.value = false
+  showMACD.value = false
+  showRSI.value = false
+  chart.removeIndicator({ paneId: 'candle_pane', name: 'BOLL' })
+  if (volIndicatorId) { chart.removeIndicator({ id: volIndicatorId }); volIndicatorId = null }
+  if (macdIndicatorId) { chart.removeIndicator({ id: macdIndicatorId }); macdIndicatorId = null }
+  if (rsiIndicatorId) { chart.removeIndicator({ id: rsiIndicatorId }); rsiIndicatorId = null }
+}
+
+// 切换各技术指标
+const toggleBOLL = () => {
+  if (!chart) return
+  if (showBOLL.value) { createBOLL() }
+  else { chart.removeIndicator({ paneId: 'candle_pane', name: 'BOLL' }) }
+}
+const toggleVOL = () => {
+  if (!chart) return
+  if (showVOL.value) { createVOL() }
+  else if (volIndicatorId) { chart.removeIndicator({ id: volIndicatorId }); volIndicatorId = null }
+}
+const toggleMACD = () => {
+  if (!chart) return
+  if (showMACD.value) { createMACD() }
+  else if (macdIndicatorId) { chart.removeIndicator({ id: macdIndicatorId }); macdIndicatorId = null }
+}
+const toggleRSI = () => {
+  if (!chart) return
+  if (showRSI.value) { createRSI() }
+  else if (rsiIndicatorId) { chart.removeIndicator({ id: rsiIndicatorId }); rsiIndicatorId = null }
+}
 
 // 检测布林带极值K线
 const detectBollExtremes = (data, period = 20, stdDev = 2, reversionWindow = 5, bandFilter = 'both', penetrationMode = 'full', partialRatio = 50) => {
@@ -519,22 +788,90 @@ watch([bollPeriod, bollStdDev, bollReversionWindow, bollBandFilter, bollPenetrat
   if (showBollExtremes.value) {
     drawBollExtremes()
   }
+  if (showGaps.value && showGapBollBreakthrough.value) {
+    drawGaps()
+  }
 })
 
 // 数据源配置
 const dataSources = {
-  daily: {
-    data: dailyData,
-    label: '日线',
+  hsi: {
+    filename: 'hsi_daily.json',
+    label: '恒生指数',
+    period: { span: 1, type: 'day' },
+    title: '恒生指数 日线K线图',
+    subtitle: '数据来源：东方财富（1990-01 至今）',
+    symbol: { ticker: 'HSI', exchange: '恒生指数' }
+  },
+  hstech: {
+    filename: 'hstech_daily_20200701_20260205.json',
+    label: '恒生科技',
     period: { span: 1, type: 'day' },
     title: '恒生科技指数 日线K线图',
-    subtitle: '数据来源：东方财富（2020-07 ~ 2026-02）'
+    subtitle: '数据来源：东方财富（2020-07 至今）',
+    symbol: { ticker: 'HSTECH', exchange: '恒生科技' }
+  },
+  csi300: {
+    filename: 'csi300_daily.json',
+    label: '沪深300',
+    period: { span: 1, type: 'day' },
+    title: '沪深300指数 日线K线图',
+    subtitle: '数据来源：东方财富（2005-01 至今）',
+    symbol: { ticker: 'CSI300', exchange: '沪深300' }
+  },
+  csi500: {
+    filename: 'csi500_daily.json',
+    label: '中证500',
+    period: { span: 1, type: 'day' },
+    title: '中证500指数 日线K线图',
+    subtitle: '数据来源：东方财富（2007-01 至今）',
+    symbol: { ticker: 'CSI500', exchange: '中证500' }
   }
 }
 
-const currentSource = ref('daily')
-const chartTitle = ref(dataSources.daily.title)
-const chartSubtitle = ref(dataSources.daily.subtitle)
+const currentSource = ref('hstech')
+const chartTitle = ref(dataSources.hstech.title)
+const chartSubtitle = ref(dataSources.hstech.subtitle)
+const isLoading = ref(false)
+
+// 更新指数数据相关状态
+const isUpdating = ref(false)
+const updateMessage = ref('')
+const updateMessageType = ref('success')
+
+// 更新指数数据
+const updateIndexData = async () => {
+  if (!chart || isUpdating.value) return
+  isUpdating.value = true
+  updateMessage.value = ''
+  try {
+    const res = await $fetch('/api/update-index', {
+      method: 'POST',
+      body: { index: 'all' }
+    })
+    if (res?.success) {
+      updateMessage.value = res.message || '数据已更新'
+      updateMessageType.value = 'success'
+      // 重新加载当前数据源以刷新图表
+      await switchDataSource(currentSource.value)
+      setTimeout(() => { updateMessage.value = '' }, 3000)
+    } else {
+      updateMessage.value = '更新失败'
+      updateMessageType.value = 'error'
+      setTimeout(() => { updateMessage.value = '' }, 5000)
+    }
+  } catch (e) {
+    let msg = '更新失败，请检查网络或服务端'
+    if (e && typeof e === 'object') {
+      msg = (e.data && e.data.statusMessage) || e.statusMessage || e.message || msg
+    }
+    updateMessage.value = msg
+    updateMessageType.value = 'error'
+    setTimeout(() => { updateMessage.value = '' }, 5000)
+  } finally {
+    isUpdating.value = false
+  }
+}
 
 // 转换数据格式
 const transformData = (data) => {
@@ -614,6 +951,25 @@ const toggleTrendLines = () => {
   }
 }
 
+// 计算并应用自适应参数
+const applyAdaptiveParams = () => {
+  if (!currentKlineData.length) return
+  const result = computeAdaptiveParams(currentKlineData)
+  adaptiveStats.value = result.stats
+  recommendedParams.value = {
+    sidewaysThreshold: result.sidewaysThreshold,
+    minTrendLength: result.minTrendLength
+  }
+  sidewaysThreshold.value = result.sidewaysThreshold
+  minTrendLength.value = result.minTrendLength
+}
+
+// 重置为推荐参数
+const resetToRecommended = () => {
+  sidewaysThreshold.value = recommendedParams.value.sidewaysThreshold
+  minTrendLength.value = recommendedParams.value.minTrendLength
+}
+
 // 监听参数变化，重新绘制趋势线
 watch([sidewaysThreshold, minTrendLength], () => {
   if (showTrendLines.value) {
@@ -622,33 +978,53 @@ watch([sidewaysThreshold, minTrendLength], () => {
 })
 
 // 切换数据源
-const switchDataSource = (sourceKey) => {
-  if (!chart || !dataSources[sourceKey]) return
+const switchDataSource = async (sourceKey) => {
+  if (!chart || !dataSources[sourceKey] || isLoading.value) return
 
   const source = dataSources[sourceKey]
   currentSource.value = sourceKey
   chartTitle.value = source.title
   chartSubtitle.value = source.subtitle
+  isLoading.value = true
 
-  // 更新周期
-  chart.setPeriod(source.period)
+  try {
+    const response = await fetch('/' + source.filename)
+    const rawData = await response.json()
 
-  // 重新加载数据
-  chart.setDataLoader({
-    getBars: ({ callback }) => {
-      const transformedData = transformData(source.data)
-      currentKlineData = transformedData  // 缓存数据
-      console.log(`✅ 切换到 ${source.label}，加载了 ${transformedData.length} 根K线`)
-      callback(transformedData)
-      
-      // 数据加载完成后，重新绘制开启的标记
-      setTimeout(() => {
-        if (showTrendLines.value) drawTrendLines()
-        if (showGaps.value) drawGaps()
-        if (showBollExtremes.value) drawBollExtremes()
-      }, 100)
-    }
-  })
+    chart.setSymbol(source.symbol)
+    chart.setPeriod(source.period)
+
+    chart.setDataLoader({
+      getBars: ({ callback }) => {
+        const transformedData = transformData(rawData)
+        currentKlineData = transformedData
+        callback(transformedData)
+
+        setTimeout(() => {
+          // 移除所有现有指标，避免 ID 失效
+          if (volIndicatorId) { chart.removeIndicator({ id: volIndicatorId }); volIndicatorId = null }
+          if (macdIndicatorId) { chart.removeIndicator({ id: macdIndicatorId }); macdIndicatorId = null }
+          if (rsiIndicatorId) { chart.removeIndicator({ id: rsiIndicatorId }); rsiIndicatorId = null }
+          chart.removeIndicator({ paneId: 'candle_pane', name: 'BOLL' })
+
+          // 根据当前开关状态重建指标
+          if (showBOLL.value) createBOLL()
+          if (showVOL.value) createVOL()
+          if (showMACD.value) createMACD()
+          if (showRSI.value) createRSI()
+
+          applyAdaptiveParams()
+          if (showTrendLines.value) drawTrendLines()
+          if (showGaps.value) drawGaps()
+          if (showBollExtremes.value) drawBollExtremes()
+        }, 100)
+      }
+    })
+  } catch (e) {
+    console.error('数据加载失败:', e)
+  } finally {
+    isLoading.value = false
+  }
 }
 
 onMounted(async () => {
@@ -665,26 +1041,33 @@ onMounted(async () => {
   }
 
   // 1. 设置交易对信息和周期
-  chart.setSymbol({
-    ticker: 'HSTECH',
-    exchange: '恒生科技'
-  })
-
   const initialSource = dataSources[currentSource.value]
+  chart.setSymbol(initialSource.symbol)
   chart.setPeriod(initialSource.period)
-  
-  // 2. 设置数据加载器
-  chart.setDataLoader({
-    getBars: ({ callback }) => {
-      const transformedData = transformData(initialSource.data)
-      currentKlineData = transformedData  // 缓存数据
-      console.log(`✅ 加载了 ${transformedData.length} 根K线`)
-      console.log('📊 第一条数据:', transformedData[0])
-      console.log('📊 最后一条数据:', transformedData[transformedData.length - 1])
-      callback(transformedData)
-    }
-  })
-  
+
+  // 2. 通过 fetch 加载默认数据源
+  isLoading.value = true
+  try {
+    const response = await fetch('/' + initialSource.filename)
+    const rawData = await response.json()
+
+    chart.setDataLoader({
+      getBars: ({ callback }) => {
+        const transformedData = transformData(rawData)
+        currentKlineData = transformedData
+        callback(transformedData)
+
+        setTimeout(() => {
+          applyAdaptiveParams()
+        }, 50)
+      }
+    })
+  } catch (e) {
+    console.error('初始数据加载失败:', e)
+  } finally {
+    isLoading.value = false
+  }
+
   // 3. 配置专业的蜡烛图样式
   chart.setStyles({
     candle: {
@@ -748,97 +1131,18 @@ onMounted(async () => {
     }
   })
   
-  // 4. 在主图上添加布林带指标
-  chart.createIndicator({
-    name: 'BOLL',
-    calcParams: [20, 2],  // 周期：20，标准差倍数：2
-    precision: 2,
-    styles: {
-      lines: [
-        {
-          style: 'solid',
-          smooth: false,
-          size: 1,
-          color: '#FF6D00'  // 上轨：橙色
-        },
-        {
-          style: 'solid',
-          smooth: false,
-          size: 1,
-          color: '#2196F3'  // 中轨：蓝色
-        },
-        {
-          style: 'solid',
-          smooth: false,
-          size: 1,
-          color: '#00C853'  // 下轨：绿色
-        }
-      ]
-    }
-  }, true, { id: 'candle_pane' })
+  // 4. 创建默认开启的技术指标
+  createBOLL()
+  createVOL()
+  createMACD()
+  createRSI()
   
-  console.log('✅ 已添加布林带指标 BOLL(20, 2)')
-  
-  // 5. 创建成交量指标（在独立窗口）
-  chart.createIndicator('VOL', false)
-  
-  // 6. 创建MACD指标（在独立窗口）
-  chart.createIndicator({
-    name: 'MACD',
-    calcParams: [12, 26, 9],  // 快线：12，慢线：26，信号线：9
-    precision: 2,
-    styles: {
-      bars: [
-        {
-          upColor: 'rgba(34, 197, 94, 0.7)',
-          downColor: 'rgba(239, 68, 68, 0.7)',
-          noChangeColor: '#888888'
-        }
-      ],
-      lines: [
-        {
-          style: 'solid',
-          smooth: false,
-          size: 1,
-          color: '#FF6D00'  // DIF线：橙色
-        },
-        {
-          style: 'solid',
-          smooth: false,
-          size: 1,
-          color: '#2196F3'  // DEA线：蓝色
-        }
-      ]
-    }
-  }, false)
-  
-  console.log('✅ 已添加MACD指标 (12, 26, 9)')
-  
-  // 7. 创建RSI指标（在独立窗口）
-  chart.createIndicator({
-    name: 'RSI',
-    calcParams: [14],  // 周期：14
-    precision: 2,
-    styles: {
-      lines: [
-        {
-          style: 'solid',
-          smooth: false,
-          size: 2,
-          color: '#FF6D00'  // RSI线：橙色
-        }
-      ]
-    }
-  }, false)
-  
-  console.log('✅ 已添加RSI指标 (14)')
-  
-  // 8. 设置可见K线数量和间距
+  // 5. 设置可见K线数量和间距
   chart.setBarSpace(10)
   chart.setRightMinVisibleBarCount(3)
   chart.setLeftMinVisibleBarCount(3)
   
-  // 9. 滚动到最新数据
+  // 6. 滚动到最新数据
   setTimeout(() => {
     chart.scrollToRealTime()
   }, 100)
@@ -866,8 +1170,33 @@ onUnmounted(() => {
         >
           {{ source.label }}
         </button>
+        <button
+          class="source-btn update-btn"
+          :disabled="isUpdating || isLoading"
+          @click="updateIndexData"
+        >
+          {{ isUpdating ? '更新中...' : '更新数据' }}
+        </button>
       </div>
-      
+      <p v-if="updateMessage" :class="['update-message', updateMessageType]">{{ updateMessage }}</p>
+
+      <!-- 技术指标面板 -->
+      <div class="indicator-panel">
+        <span class="panel-label">指标</span>
+        <button :class="['indicator-btn', 'ind-boll', { active: showBOLL }]"
+                @click="showBOLL = !showBOLL; toggleBOLL()">BOLL</button>
+        <button :class="['indicator-btn', 'ind-vol', { active: showVOL }]"
+                @click="showVOL = !showVOL; toggleVOL()">VOL</button>
+        <button :class="['indicator-btn', 'ind-macd', { active: showMACD }]"
+                @click="showMACD = !showMACD; toggleMACD()">MACD</button>
+        <button :class="['indicator-btn', 'ind-rsi', { active: showRSI }]"
+                @click="showRSI = !showRSI; toggleRSI()">RSI</button>
+        <button class="indicator-btn ind-close-all"
+                :class="{ disabled: !showBOLL && !showVOL && !showMACD && !showRSI }"
+                :disabled="!showBOLL && !showVOL && !showMACD && !showRSI"
+                @click="closeAllIndicators()">关闭所有</button>
+      </div>
+
       <!-- 分析工具按钮 -->
       <div class="analysis-toolbar">
         <button class="settings-btn" @click="showSettingsDialog = true">
@@ -914,7 +1243,9 @@ onUnmounted(() => {
               <div class="section-content" v-show="showTrendLines">
                 <div class="param-row">
                   <label class="slider-label">
-                    <span>横盘阈值: {{ sidewaysThreshold.toFixed(1) }}%</span>
+                    <span>横盘阈值: {{ sidewaysThreshold.toFixed(1) }}%
+                      <span class="recommended-hint" v-if="recommendedParams.sidewaysThreshold !== sidewaysThreshold">(推荐 {{ recommendedParams.sidewaysThreshold.toFixed(1) }}%)</span>
+                    </span>
                     <input
                       type="range"
                       v-model.number="sidewaysThreshold"
@@ -923,7 +1254,9 @@ onUnmounted(() => {
                     />
                   </label>
                   <label class="slider-label">
-                    <span>最小K线数: {{ minTrendLength }}</span>
+                    <span>最小K线数: {{ minTrendLength }}
+                      <span class="recommended-hint" v-if="recommendedParams.minTrendLength !== minTrendLength">(推荐 {{ recommendedParams.minTrendLength }})</span>
+                    </span>
                     <input
                       type="range"
                       v-model.number="minTrendLength"
@@ -931,6 +1264,19 @@ onUnmounted(() => {
                       class="slider"
                     />
                   </label>
+                  <button
+                    class="adaptive-btn"
+                    @click="resetToRecommended"
+                    :disabled="sidewaysThreshold === recommendedParams.sidewaysThreshold && minTrendLength === recommendedParams.minTrendLength"
+                  >
+                    自适应
+                  </button>
+                </div>
+                <div class="adaptive-stats" v-if="adaptiveStats">
+                  <span class="stat-item stat-adaptive">中位日波动 {{ adaptiveStats.medianAbsReturn }}%</span>
+                  <span class="stat-item stat-adaptive">标准差 {{ adaptiveStats.stdReturn }}%</span>
+                  <span class="stat-item stat-adaptive">ATR {{ adaptiveStats.atrPercent }}%</span>
+                  <span class="stat-item stat-adaptive">{{ adaptiveStats.dataLength }}根K线</span>
                 </div>
                 <div class="trend-stats" v-if="trendStats">
                   <span class="stat-item stat-total">共 {{ trendStats.total }} 段</span>
@@ -956,6 +1302,35 @@ onUnmounted(() => {
                 </label>
               </div>
               <div class="section-content" v-show="showGaps">
+                <div class="boll-option-row">
+                  <span class="boll-option-label">数值:</span>
+                  <div class="boll-btn-group">
+                    <button :class="['boll-opt-btn', { active: showGapValues }]" @click="showGapValues = !showGapValues">显示</button>
+                    <button :class="['boll-opt-btn', { active: !showGapValues }]" @click="showGapValues = !showGapValues">隐藏</button>
+                  </div>
+                </div>
+                <div class="boll-option-row">
+                  <span class="boll-option-label">价格:</span>
+                  <div class="boll-btn-group">
+                    <button :class="['boll-opt-btn', { active: showGapEdgeValues }]" @click="showGapEdgeValues = !showGapEdgeValues">显示</button>
+                    <button :class="['boll-opt-btn', { active: !showGapEdgeValues }]" @click="showGapEdgeValues = !showGapEdgeValues">隐藏</button>
+                  </div>
+                </div>
+                <div class="boll-option-row">
+                  <span class="boll-option-label">BOLL突破:</span>
+                  <div class="boll-btn-group">
+                    <button :class="['boll-opt-btn', { active: showGapBollBreakthrough }]"
+                      @click="showGapBollBreakthrough = !showGapBollBreakthrough">显示</button>
+                    <button :class="['boll-opt-btn', { active: !showGapBollBreakthrough }]"
+                      @click="showGapBollBreakthrough = !showGapBollBreakthrough">隐藏</button>
+                  </div>
+                </div>
+                <div class="trend-stats" v-if="showGapBollBreakthrough && gapBollStats && gapBollStats.total > 0">
+                  <span class="stat-item stat-total">突破 {{ gapBollStats.total }} 个</span>
+                  <span class="stat-item" style="background: rgba(255,109,0,0.15); color: #FF6D00;" v-if="gapBollStats.upper">上轨 {{ gapBollStats.upper }}</span>
+                  <span class="stat-item" style="background: rgba(33,150,243,0.15); color: #2196F3;" v-if="gapBollStats.middle">中轨 {{ gapBollStats.middle }}</span>
+                  <span class="stat-item" style="background: rgba(0,200,83,0.15); color: #00C853;" v-if="gapBollStats.lower">下轨 {{ gapBollStats.lower }}</span>
+                </div>
                 <div class="param-row">
                   <label class="slider-label">
                     <span>最小幅度: {{ gapThreshold.toFixed(1) }}%</span>
@@ -1065,7 +1440,13 @@ onUnmounted(() => {
         </div>
       </div>
     </div>
-    <div id="kline-chart" ref="chartRef" class="chart"></div>
+    <div class="chart-wrapper">
+      <div v-if="isLoading" class="chart-loading-overlay">
+        <div class="loading-spinner-small"></div>
+        <span>加载数据中...</span>
+      </div>
+      <div id="kline-chart" ref="chartRef" class="chart"></div>
+    </div>
   </div>
 </template>
 
@@ -1130,6 +1511,65 @@ onUnmounted(() => {
   color: #fff;
   border-color: #333;
 }
+
+.source-btn.update-btn {
+  margin-left: 8px;
+  border-color: #3b82f6;
+  color: #3b82f6;
+}
+
+.source-btn.update-btn:hover:not(:disabled) {
+  background: #3b82f6;
+  color: #fff;
+  border-color: #3b82f6;
+}
+
+.source-btn.update-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.update-message {
+  margin: 8px 0 0;
+  font-size: 13px;
+}
+
+.update-message.success {
+  color: #22c55e;
+}
+
+.update-message.error {
+  color: #ef4444;
+}
+
+/* 技术指标面板 */
+.indicator-panel {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+}
+.panel-label { font-size: 13px; color: #999; }
+.indicator-btn {
+  padding: 5px 16px;
+  border: 1px solid #ddd;
+  border-radius: 16px;
+  background: #fff;
+  color: #999;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+.indicator-btn:hover { border-color: #999; color: #666; }
+.indicator-btn.ind-boll.active { background: #FF6D00; color: #fff; border-color: #FF6D00; }
+.indicator-btn.ind-vol.active  { background: #f97316; color: #fff; border-color: #f97316; }
+.indicator-btn.ind-macd.active { background: #2196F3; color: #fff; border-color: #2196F3; }
+.indicator-btn.ind-rsi.active  { background: #a855f7; color: #fff; border-color: #a855f7; }
+.indicator-btn.ind-close-all { background: #f0f0f0; color: #666; border-color: #ddd; }
+.indicator-btn.ind-close-all:hover:not(.disabled) { background: #e0e0e0; color: #333; border-color: #999; }
+.indicator-btn.ind-close-all.disabled { opacity: 0.5; cursor: not-allowed; }
 
 /* 分析工具按钮栏 */
 .analysis-toolbar {
@@ -1439,6 +1879,54 @@ onUnmounted(() => {
   color: #f59e0b;
 }
 
+/* 自适应参数相关样式 */
+.adaptive-btn {
+  padding: 4px 14px;
+  border: 1px solid #3b82f6;
+  border-radius: 14px;
+  background: #fff;
+  color: #3b82f6;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+  align-self: center;
+}
+
+.adaptive-btn:hover:not(:disabled) {
+  background: #3b82f6;
+  color: #fff;
+}
+
+.adaptive-btn:disabled {
+  border-color: #ccc;
+  color: #ccc;
+  cursor: default;
+}
+
+.recommended-hint {
+  color: #3b82f6;
+  font-size: 10px;
+  font-weight: 400;
+}
+
+.adaptive-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 8px 12px;
+  background: #f0f4ff;
+  border-radius: 12px;
+  font-size: 12px;
+  margin-bottom: 8px;
+}
+
+.stat-adaptive {
+  background: rgba(59, 130, 246, 0.1);
+  color: #3b82f6;
+}
+
 .stat-boll-upper {
   background: rgba(168, 85, 247, 0.15);
   color: #a855f7;
@@ -1583,6 +2071,40 @@ onUnmounted(() => {
 
 .kline-container {
   animation: fadeIn 0.6s ease-out;
+}
+
+.chart-wrapper {
+  position: relative;
+}
+
+.chart-loading-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(255, 255, 255, 0.75);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  z-index: 10;
+  border-radius: 12px;
+  font-size: 14px;
+  color: #666;
+}
+
+.loading-spinner-small {
+  width: 20px;
+  height: 20px;
+  border: 3px solid #e0e0e0;
+  border-top-color: #333;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
 }
 </style>
 

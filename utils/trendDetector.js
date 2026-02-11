@@ -154,6 +154,94 @@ export function mergeSameTrends(trends, klineData) {
 }
 
 /**
+ * 根据K线数据的波动特征，自动计算最优趋势检测参数
+ * @param {Array} klineData - K线数据数组，每个元素需包含 timestamp, open, high, low, close, volume
+ * @returns {Object} 推荐参数和统计信息
+ */
+export function computeAdaptiveParams(klineData) {
+  if (!klineData || klineData.length < 20) {
+    return {
+      sidewaysThreshold: 1,
+      minTrendLength: 2,
+      stats: {
+        medianAbsReturn: null,
+        meanAbsReturn: null,
+        stdReturn: null,
+        atrPercent: null,
+        dataLength: klineData ? klineData.length : 0
+      }
+    }
+  }
+
+  const dataLength = klineData.length
+
+  // 1. 计算日收益率数组
+  const returns = []
+  const absReturns = []
+  for (let i = 1; i < dataLength; i++) {
+    const ret = ((klineData[i].close - klineData[i - 1].close) / klineData[i - 1].close) * 100
+    returns.push(ret)
+    absReturns.push(Math.abs(ret))
+  }
+
+  // 2. 中位数绝对收益率
+  const sortedAbsReturns = [...absReturns].sort((a, b) => a - b)
+  const mid = Math.floor(sortedAbsReturns.length / 2)
+  const medianAbsReturn = sortedAbsReturns.length % 2 === 0
+    ? (sortedAbsReturns[mid - 1] + sortedAbsReturns[mid]) / 2
+    : sortedAbsReturns[mid]
+
+  // 3. 平均绝对收益率
+  const meanAbsReturn = absReturns.reduce((a, b) => a + b, 0) / absReturns.length
+
+  // 4. 收益率标准差
+  const meanReturn = returns.reduce((a, b) => a + b, 0) / returns.length
+  const variance = returns.reduce((sum, r) => sum + (r - meanReturn) ** 2, 0) / returns.length
+  const stdReturn = Math.sqrt(variance)
+
+  // 5. ATR百分比 (ATR(14) / close 的均值 * 100)
+  const atrPeriod = 14
+  let atrSum = 0
+  let atrCount = 0
+  let closeSum = 0
+  for (let i = 1; i < dataLength; i++) {
+    const tr = Math.max(
+      klineData[i].high - klineData[i].low,
+      Math.abs(klineData[i].high - klineData[i - 1].close),
+      Math.abs(klineData[i].low - klineData[i - 1].close)
+    )
+    if (i >= atrPeriod) {
+      atrSum += tr
+      atrCount++
+    }
+    closeSum += klineData[i].close
+  }
+  const avgATR = atrCount > 0 ? atrSum / atrCount : 0
+  const avgClose = closeSum / (dataLength - 1)
+  const atrPercent = avgClose > 0 ? (avgATR / avgClose) * 100 : 0
+
+  // 6. 推导参数
+  // sidewaysThreshold: 中位数绝对收益率的一半，四舍五入到0.1
+  const sidewaysThreshold = Math.round(medianAbsReturn * 0.5 * 10) / 10
+
+  // minTrendLength: 基于数据量，下限2，上限10
+  // 数据量需要超过2000才开始增加最小趋势长度
+  const minTrendLength = Math.min(10, Math.max(2, Math.round(dataLength / 1000)))
+
+  return {
+    sidewaysThreshold: Math.max(0.1, sidewaysThreshold), // 至少0.1%
+    minTrendLength,
+    stats: {
+      medianAbsReturn: Math.round(medianAbsReturn * 1000) / 1000,
+      meanAbsReturn: Math.round(meanAbsReturn * 1000) / 1000,
+      stdReturn: Math.round(stdReturn * 1000) / 1000,
+      atrPercent: Math.round(atrPercent * 1000) / 1000,
+      dataLength
+    }
+  }
+}
+
+/**
  * 获取趋势统计信息
  * @param {Array} trends - 趋势段落数组
  * @returns {Object} 统计信息
