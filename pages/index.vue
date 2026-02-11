@@ -33,8 +33,6 @@
 </template>
 
 <script setup>
-definePageMeta({ layout: 'blank' })
-
 useHead({
   title: 'K线图系统 - 首页',
   meta: [
