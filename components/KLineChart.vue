@@ -1,5 +1,5 @@
 <script setup>
-import { onMounted, onUnmounted, ref, nextTick, watch } from 'vue'
+import { onMounted, onUnmounted, ref, computed, nextTick, watch } from 'vue'
 import { init, dispose, registerOverlay } from 'klinecharts'
 
 // 导入趋势识别工具
@@ -801,7 +801,7 @@ const dataSources = {
     period: { span: 1, type: 'day' },
     title: '恒生指数 日线K线图',
     subtitle: '数据来源：东方财富（1990-01 至今）',
-    symbol: { ticker: 'HSI', exchange: '恒生指数' }
+    symbol: { ticker: '恒生指数 HSI', exchange: '恒生指数' }
   },
   hstech: {
     filename: 'hstech_daily_20200701_20260205.json',
@@ -809,7 +809,7 @@ const dataSources = {
     period: { span: 1, type: 'day' },
     title: '恒生科技指数 日线K线图',
     subtitle: '数据来源：东方财富（2020-07 至今）',
-    symbol: { ticker: 'HSTECH', exchange: '恒生科技' }
+    symbol: { ticker: '恒生科技 HSTECH', exchange: '恒生科技' }
   },
   csi300: {
     filename: 'csi300_daily.json',
@@ -817,7 +817,7 @@ const dataSources = {
     period: { span: 1, type: 'day' },
     title: '沪深300指数 日线K线图',
     subtitle: '数据来源：东方财富（2005-01 至今）',
-    symbol: { ticker: 'CSI300', exchange: '沪深300' }
+    symbol: { ticker: '沪深300 CSI300', exchange: '沪深300' }
   },
   csi500: {
     filename: 'csi500_daily.json',
@@ -825,7 +825,7 @@ const dataSources = {
     period: { span: 1, type: 'day' },
     title: '中证500指数 日线K线图',
     subtitle: '数据来源：东方财富（2007-01 至今）',
-    symbol: { ticker: 'CSI500', exchange: '中证500' }
+    symbol: { ticker: '中证500 CSI500', exchange: '中证500' }
   }
 }
 
@@ -833,6 +833,89 @@ const currentSource = ref('hstech')
 const chartTitle = ref(dataSources.hstech.title)
 const chartSubtitle = ref(dataSources.hstech.subtitle)
 const isLoading = ref(false)
+
+// A股相关状态
+const stockList = ref([])
+const stockSearchQuery = ref('')
+const showStockDropdown = ref(false)
+const selectedStock = ref(null)
+const isStockSource = ref(false)
+
+const filteredStocks = computed(() => {
+  const q = stockSearchQuery.value.trim().toLowerCase()
+  if (!q) return []
+  return stockList.value
+    .filter(s => s.symbol.includes(q) || s.ts_code.toLowerCase().includes(q) || s.name.includes(q) || s.industry.includes(q))
+    .slice(0, 50)
+})
+
+// 日期范围筛选
+const dateRangeStart = ref('')
+const dateRangeEnd = ref('')
+const activeDateRange = ref('all')  // 'all' | '1m' | '3m' | '6m' | '1y' | '3y' | 'custom'
+let fullRawData = []  // 缓存完整原始数据（已转换格式）
+
+const formatDate = (ts) => {
+  const d = new Date(ts)
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
+const filterDataByRange = (data) => {
+  const start = dateRangeStart.value ? new Date(dateRangeStart.value).getTime() : 0
+  const end = dateRangeEnd.value ? new Date(dateRangeEnd.value).getTime() + 86400000 - 1 : Infinity
+  if (!start && end === Infinity) return data
+  return data.filter(d => d.timestamp >= start && d.timestamp <= end)
+}
+
+const setDateRange = (range) => {
+  activeDateRange.value = range
+  if (range === 'all') {
+    dateRangeStart.value = ''
+    dateRangeEnd.value = ''
+  } else {
+    const now = new Date()
+    dateRangeEnd.value = formatDate(now.getTime())
+    const d = new Date(now)
+    if (range === '1m') d.setMonth(d.getMonth() - 1)
+    else if (range === '3m') d.setMonth(d.getMonth() - 3)
+    else if (range === '6m') d.setMonth(d.getMonth() - 6)
+    else if (range === '1y') d.setFullYear(d.getFullYear() - 1)
+    else if (range === '3y') d.setFullYear(d.getFullYear() - 3)
+    dateRangeStart.value = formatDate(d.getTime())
+  }
+  applyDateRange()
+}
+
+const applyDateRange = () => {
+  if (!chart || !fullRawData.length) return
+  const filtered = filterDataByRange(fullRawData)
+  if (!filtered.length) return
+  currentKlineData = filtered
+  chart.setDataLoader({
+    getBars: ({ callback }) => {
+      callback(filtered)
+      setTimeout(() => {
+        if (volIndicatorId) { chart.removeIndicator({ id: volIndicatorId }); volIndicatorId = null }
+        if (macdIndicatorId) { chart.removeIndicator({ id: macdIndicatorId }); macdIndicatorId = null }
+        if (rsiIndicatorId) { chart.removeIndicator({ id: rsiIndicatorId }); rsiIndicatorId = null }
+        chart.removeIndicator({ paneId: 'candle_pane', name: 'BOLL' })
+        if (showBOLL.value) createBOLL()
+        if (showVOL.value) createVOL()
+        if (showMACD.value) createMACD()
+        if (showRSI.value) createRSI()
+        applyAdaptiveParams()
+        if (showTrendLines.value) drawTrendLines()
+        if (showGaps.value) drawGaps()
+        if (showBollExtremes.value) drawBollExtremes()
+      }, 100)
+    }
+  })
+}
+
+const onDateInputChange = () => {
+  activeDateRange.value = 'custom'
+  applyDateRange()
+}
 
 // 更新指数数据相关状态
 const isUpdating = ref(false)
@@ -873,16 +956,26 @@ const updateIndexData = async () => {
   }
 }
 
-// 转换数据格式
+// 转换数据格式（兼容指数和A股）
 const transformData = (data) => {
-  return data.map(item => ({
-    timestamp: parseInt(item.时间戳),
-    open: item.开盘价,
-    high: item.最高价,
-    low: item.最低价,
-    close: item.收盘价,
-    volume: item.成交量 || 0
-  }))
+  return data.map(item => {
+    let timestamp
+    if (item.时间戳) {
+      timestamp = parseInt(item.时间戳)
+    } else if (item.时间) {
+      timestamp = new Date(item.时间).getTime()
+    } else {
+      timestamp = 0
+    }
+    return {
+      timestamp,
+      open: item.开盘价,
+      high: item.最高价,
+      low: item.最低价,
+      close: item.收盘价,
+      volume: item.成交量 || 0
+    }
+  }).filter(item => item.timestamp > 0)
 }
 
 // 清除所有趋势线
@@ -977,9 +1070,89 @@ watch([sidewaysThreshold, minTrendLength], () => {
   }
 })
 
+// 选择A股
+const selectStock = async (stock) => {
+  if (!chart || isLoading.value) return
+
+  selectedStock.value = stock
+  isStockSource.value = true
+  currentSource.value = null
+  showStockDropdown.value = false
+  stockSearchQuery.value = ''
+  chartTitle.value = `${stock.name} (${stock.symbol}) 日线K线图`
+  chartSubtitle.value = `${stock.area} · ${stock.industry}`
+  isLoading.value = true
+
+  try {
+    const response = await fetch(`/daily_json/${stock.ts_code}.json`)
+    const rawData = await response.json()
+
+    chart.setSymbol({ ticker: `${stock.name} ${stock.symbol}`, exchange: stock.name })
+    chart.setPeriod({ span: 1, type: 'day' })
+
+    const transformedData = transformData(rawData)
+    fullRawData = transformedData
+    const filtered = filterDataByRange(transformedData)
+
+    chart.setDataLoader({
+      getBars: ({ callback }) => {
+        currentKlineData = filtered
+        callback(filtered)
+
+        setTimeout(() => {
+          if (volIndicatorId) { chart.removeIndicator({ id: volIndicatorId }); volIndicatorId = null }
+          if (macdIndicatorId) { chart.removeIndicator({ id: macdIndicatorId }); macdIndicatorId = null }
+          if (rsiIndicatorId) { chart.removeIndicator({ id: rsiIndicatorId }); rsiIndicatorId = null }
+          chart.removeIndicator({ paneId: 'candle_pane', name: 'BOLL' })
+
+          if (showBOLL.value) createBOLL()
+          if (showVOL.value) createVOL()
+          if (showMACD.value) createMACD()
+          if (showRSI.value) createRSI()
+
+          applyAdaptiveParams()
+          if (showTrendLines.value) drawTrendLines()
+          if (showGaps.value) drawGaps()
+          if (showBollExtremes.value) drawBollExtremes()
+        }, 100)
+      }
+    })
+  } catch (e) {
+    console.error('A股数据加载失败:', e)
+  } finally {
+    isLoading.value = false
+  }
+}
+
+// 加载股票列表CSV
+const loadStockList = async () => {
+  try {
+    const response = await fetch('/stock_list_main_board_non_st.csv')
+    const text = await response.text()
+    const clean = text.replace(/^\uFEFF/, '').trim()
+    const lines = clean.split('\n')
+    if (lines.length < 2) return
+    stockList.value = lines.slice(1).map(line => {
+      const cols = line.trim().split(',')
+      return {
+        ts_code: cols[0],
+        symbol: cols[1],
+        name: cols[2],
+        area: cols[3] || '',
+        industry: cols[4] || ''
+      }
+    }).filter(s => s.ts_code && s.name)
+  } catch (e) {
+    console.error('股票列表加载失败:', e)
+  }
+}
+
 // 切换数据源
 const switchDataSource = async (sourceKey) => {
   if (!chart || !dataSources[sourceKey] || isLoading.value) return
+
+  selectedStock.value = null
+  isStockSource.value = false
 
   const source = dataSources[sourceKey]
   currentSource.value = sourceKey
@@ -994,20 +1167,21 @@ const switchDataSource = async (sourceKey) => {
     chart.setSymbol(source.symbol)
     chart.setPeriod(source.period)
 
+    const transformedData = transformData(rawData)
+    fullRawData = transformedData
+    const filtered = filterDataByRange(transformedData)
+
     chart.setDataLoader({
       getBars: ({ callback }) => {
-        const transformedData = transformData(rawData)
-        currentKlineData = transformedData
-        callback(transformedData)
+        currentKlineData = filtered
+        callback(filtered)
 
         setTimeout(() => {
-          // 移除所有现有指标，避免 ID 失效
           if (volIndicatorId) { chart.removeIndicator({ id: volIndicatorId }); volIndicatorId = null }
           if (macdIndicatorId) { chart.removeIndicator({ id: macdIndicatorId }); macdIndicatorId = null }
           if (rsiIndicatorId) { chart.removeIndicator({ id: rsiIndicatorId }); rsiIndicatorId = null }
           chart.removeIndicator({ paneId: 'candle_pane', name: 'BOLL' })
 
-          // 根据当前开关状态重建指标
           if (showBOLL.value) createBOLL()
           if (showVOL.value) createVOL()
           if (showMACD.value) createMACD()
@@ -1054,6 +1228,7 @@ onMounted(async () => {
     chart.setDataLoader({
       getBars: ({ callback }) => {
         const transformedData = transformData(rawData)
+        fullRawData = transformedData
         currentKlineData = transformedData
         callback(transformedData)
 
@@ -1146,6 +1321,9 @@ onMounted(async () => {
   setTimeout(() => {
     chart.scrollToRealTime()
   }, 100)
+
+  // 7. 加载A股股票列表
+  loadStockList()
 })
 
 onUnmounted(() => {
@@ -1178,7 +1356,50 @@ onUnmounted(() => {
           {{ isUpdating ? '更新中...' : '更新数据' }}
         </button>
       </div>
+      <!-- A股搜索选择器 -->
+      <div class="stock-selector">
+        <div class="stock-search-wrapper">
+          <input
+            type="text"
+            class="stock-search-input"
+            v-model="stockSearchQuery"
+            placeholder="搜索A股：代码、名称或行业"
+            @focus="showStockDropdown = true"
+            @blur="showStockDropdown = false"
+          />
+          <span v-if="selectedStock" class="stock-selected-tag" @click="selectedStock = null; isStockSource = false">
+            {{ selectedStock.name }} ({{ selectedStock.symbol }}) &times;
+          </span>
+          <div class="stock-dropdown" v-show="showStockDropdown && filteredStocks.length > 0">
+            <div
+              class="stock-dropdown-item"
+              v-for="stock in filteredStocks"
+              :key="stock.ts_code"
+              @mousedown.prevent="selectStock(stock)"
+            >
+              <span class="stock-code">{{ stock.symbol }}</span>
+              <span class="stock-name">{{ stock.name }}</span>
+              <span class="stock-industry">{{ stock.industry }}</span>
+            </div>
+          </div>
+        </div>
+      </div>
       <p v-if="updateMessage" :class="['update-message', updateMessageType]">{{ updateMessage }}</p>
+
+      <!-- 日期范围选择 -->
+      <div class="date-range-selector">
+        <span class="panel-label">区间</span>
+        <button :class="['range-btn', { active: activeDateRange === '1m' }]" @click="setDateRange('1m')">近1月</button>
+        <button :class="['range-btn', { active: activeDateRange === '3m' }]" @click="setDateRange('3m')">近3月</button>
+        <button :class="['range-btn', { active: activeDateRange === '6m' }]" @click="setDateRange('6m')">近6月</button>
+        <button :class="['range-btn', { active: activeDateRange === '1y' }]" @click="setDateRange('1y')">近1年</button>
+        <button :class="['range-btn', { active: activeDateRange === '3y' }]" @click="setDateRange('3y')">近3年</button>
+        <button :class="['range-btn', { active: activeDateRange === 'all' }]" @click="setDateRange('all')">全部</button>
+        <span class="range-divider"></span>
+        <input type="date" class="range-date-input" v-model="dateRangeStart" @change="onDateInputChange" />
+        <span class="range-to">至</span>
+        <input type="date" class="range-date-input" v-model="dateRangeEnd" @change="onDateInputChange" />
+      </div>
 
       <!-- 技术指标面板 -->
       <div class="indicator-panel">
@@ -1540,6 +1761,162 @@ onUnmounted(() => {
 
 .update-message.error {
   color: #ef4444;
+}
+
+/* A股搜索选择器 */
+.stock-selector {
+  display: flex;
+  justify-content: center;
+  margin-top: 10px;
+}
+
+.stock-search-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.stock-search-input {
+  width: 300px;
+  padding: 8px 16px;
+  border: 1px solid #ddd;
+  border-radius: 20px;
+  font-size: 13px;
+  outline: none;
+  transition: border-color 0.2s;
+}
+
+.stock-search-input:focus {
+  border-color: #999;
+}
+
+.stock-selected-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 12px;
+  background: #333;
+  color: #fff;
+  border-radius: 16px;
+  font-size: 12px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.stock-selected-tag:hover {
+  background: #555;
+}
+
+.stock-dropdown {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  width: 360px;
+  max-height: 300px;
+  overflow-y: auto;
+  background: #fff;
+  border: 1px solid #ddd;
+  border-radius: 12px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+  z-index: 100;
+  margin-top: 4px;
+}
+
+.stock-dropdown-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 14px;
+  cursor: pointer;
+  transition: background 0.15s;
+  font-size: 13px;
+}
+
+.stock-dropdown-item:hover {
+  background: #f5f5f5;
+}
+
+.stock-dropdown-item:first-child {
+  border-radius: 12px 12px 0 0;
+}
+
+.stock-dropdown-item:last-child {
+  border-radius: 0 0 12px 12px;
+}
+
+.stock-code {
+  color: #333;
+  font-weight: 600;
+  min-width: 55px;
+}
+
+.stock-name {
+  color: #555;
+  flex: 1;
+}
+
+.stock-industry {
+  color: #999;
+  font-size: 12px;
+}
+
+/* 日期范围选择器 */
+.date-range-selector {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 6px;
+  margin-top: 10px;
+  flex-wrap: wrap;
+}
+
+.range-btn {
+  padding: 5px 14px;
+  border: 1px solid #ddd;
+  border-radius: 16px;
+  background: #fff;
+  color: #666;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.range-btn:hover {
+  border-color: #999;
+  color: #333;
+}
+
+.range-btn.active {
+  background: #333;
+  color: #fff;
+  border-color: #333;
+}
+
+.range-divider {
+  width: 1px;
+  height: 20px;
+  background: #ddd;
+  margin: 0 4px;
+}
+
+.range-date-input {
+  padding: 4px 10px;
+  border: 1px solid #ddd;
+  border-radius: 14px;
+  font-size: 12px;
+  color: #555;
+  outline: none;
+  transition: border-color 0.2s;
+}
+
+.range-date-input:focus {
+  border-color: #999;
+}
+
+.range-to {
+  font-size: 12px;
+  color: #999;
 }
 
 /* 技术指标面板 */

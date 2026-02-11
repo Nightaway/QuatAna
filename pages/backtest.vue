@@ -1,9 +1,6 @@
 <template>
   <div class="backtest-page">
     <header class="page-header">
-      <NuxtLink to="/" class="back-btn">
-        ← 返回首页
-      </NuxtLink>
       <h1>策略回测</h1>
       <p class="subtitle">使用历史数据测试交易策略</p>
     </header>
@@ -150,26 +147,6 @@ onMounted(() => {
 .page-header {
   text-align: center;
   margin-bottom: 30px;
-  position: relative;
-}
-
-.back-btn {
-  position: absolute;
-  left: 0;
-  top: 50%;
-  transform: translateY(-50%);
-  color: #666;
-  text-decoration: none;
-  font-size: 14px;
-  padding: 10px 20px;
-  background: rgba(0, 0, 0, 0.05);
-  border-radius: 8px;
-  transition: all 0.3s ease;
-}
-
-.back-btn:hover {
-  background: rgba(0, 0, 0, 0.1);
-  color: #333;
 }
 
 .page-header h1 {

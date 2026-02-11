@@ -10,7 +10,9 @@
       "Bash(git commit -m \"$\\(cat <<''EOF''\n版本 v1.0 - 新增回测系统、技术指标分析及多数据源支持\n\n- 新增回测引擎及策略模块 \\(backtestEngine, strategies/\\)\n- 新增回测页面及组件 \\(BacktestChart, BacktestControls, BacktestResults\\)\n- 新增技术指标计算 \\(indicators.js\\) 和趋势检测 \\(trendDetector.js\\)\n- 新增数据加载器 \\(dataLoader.js\\) 和数据上传组件 \\(DataUploader.vue\\)\n- 新增绩效指标计算模块 \\(performanceMetrics.js\\)\n- 大幅增强 KLineChart 组件功能\n- 更新页面布局和导航\n- 新增 ETH 15分钟、恒生科技指数等示例数据\n\nCo-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>\nEOF\n\\)\")",
       "WebFetch(domain:klinecharts.com)",
       "WebSearch",
-      "WebFetch(domain:github.com)"
+      "WebFetch(domain:github.com)",
+      "Bash(ls \"C:\\\\Users\\\\night\\\\Desktop\\\\okx_trading\\\\layouts\"\" 2>nul || echo \"layouts directory does not exist \")",
+      "Bash(xargs:*)"
     ]
   }
 }

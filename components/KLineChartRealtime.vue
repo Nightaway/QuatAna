@@ -1,12 +1,48 @@
 <script setup>
-import { onMounted, onUnmounted, ref, nextTick } from 'vue'
+import { onMounted, onUnmounted, ref, nextTick, computed } from 'vue'
 import { init, dispose } from 'klinecharts'
 import { createOKXDataLoader } from '../utils/okxDataService'
 import { getOKXWebSocketManager } from '../utils/okxWebSocket'
+import { INST_TYPES, PERIODS, getInstruments } from '../utils/instruments'
 
 const chartRef = ref(null)
 let chart = null
 let wsManager = null
+
+// 交易对 & 周期状态
+const currentInstType = ref('SPOT')
+const currentInstId = ref('ETH-USDT')
+const currentPeriod = ref('1D')
+
+const instruments = computed(() => getInstruments(currentInstType.value))
+const currentName = computed(() => {
+  const inst = instruments.value.find(i => i.instId === currentInstId.value)
+  return inst ? inst.name : currentInstId.value
+})
+
+function switchInstType(type) {
+  if (type === currentInstType.value) return
+  currentInstType.value = type
+  const list = getInstruments(type)
+  // 尝试匹配同币种，否则取第一个
+  const base = currentInstId.value.split('-')[0]
+  const match = list.find(i => i.instId.startsWith(base + '-'))
+  const inst = match || list[0]
+  currentInstId.value = inst.instId
+  chart?.setSymbol({ ticker: inst.instId, exchange: 'OKX' })
+}
+
+function switchInstrument(instId) {
+  if (instId === currentInstId.value) return
+  currentInstId.value = instId
+  chart?.setSymbol({ ticker: instId, exchange: 'OKX' })
+}
+
+function switchPeriod(p) {
+  if (p.label === currentPeriod.value) return
+  currentPeriod.value = p.label
+  chart?.setPeriod({ span: p.span, type: p.type })
+}
 
 // 响应式状态
 const status = ref({
@@ -266,7 +302,7 @@ onUnmounted(() => {
       <div class="title-section">
         <h1>
           <span class="icon">📈</span>
-          ETH/USDT 实时K线图
+          {{ currentName }} 实时K线图
         </h1>
         <div class="badges">
           <span class="badge" :class="{ 'badge-success': status.connected, 'badge-error': !status.connected }">
@@ -274,10 +310,47 @@ onUnmounted(() => {
             {{ status.connected ? '实时连接' : '未连接' }}
           </span>
           <span class="badge badge-info">
-            日线 (1D)
+            {{ currentPeriod }}
           </span>
         </div>
       </div>
+
+      <!-- 工具栏 -->
+      <div class="toolbar">
+        <!-- 类型切换 -->
+        <div class="toolbar-group">
+          <button
+            v-for="t in INST_TYPES"
+            :key="t.key"
+            class="toolbar-btn"
+            :class="{ active: currentInstType === t.key }"
+            @click="switchInstType(t.key)"
+          >{{ t.label }}</button>
+        </div>
+
+        <!-- 交易对 -->
+        <div class="toolbar-group instruments">
+          <button
+            v-for="inst in instruments"
+            :key="inst.instId"
+            class="toolbar-btn"
+            :class="{ active: currentInstId === inst.instId }"
+            @click="switchInstrument(inst.instId)"
+          >{{ inst.name.split('/')[0] }}</button>
+        </div>
+
+        <!-- 周期 -->
+        <div class="toolbar-group">
+          <button
+            v-for="p in PERIODS"
+            :key="p.label"
+            class="toolbar-btn"
+            :class="{ active: currentPeriod === p.label }"
+            @click="switchPeriod(p)"
+          >{{ p.label }}</button>
+        </div>
+      </div>
+
       <div class="info-section">
         <p class="data-source">数据来源：OKX 交易所 WebSocket 实时推送</p>
         <div class="stats">
@@ -566,6 +639,52 @@ onUnmounted(() => {
   font-size: 13px;
   font-weight: 500;
   border: 1px solid #e0e0e0;
+}
+
+.toolbar {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-bottom: 15px;
+  padding-bottom: 15px;
+  border-bottom: 1px solid #eee;
+}
+
+.toolbar-group {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+.toolbar-group.instruments {
+  flex: 1;
+  min-width: 0;
+}
+
+.toolbar-btn {
+  padding: 5px 12px;
+  border: 1px solid #e0e0e0;
+  border-radius: 6px;
+  background: #f9f9f9;
+  color: #555;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s;
+  white-space: nowrap;
+}
+
+.toolbar-btn:hover {
+  background: #eef2ff;
+  border-color: #c7d2fe;
+  color: #4338ca;
+}
+
+.toolbar-btn.active {
+  background: #4338ca;
+  border-color: #4338ca;
+  color: #fff;
 }
 
 @media (max-width: 768px) {

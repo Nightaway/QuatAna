@@ -1,13 +1,15 @@
 """
-下载指数日K线历史数据（恒生科技、恒生指数、沪深300）
+下载指数K线历史数据（恒生科技、恒生指数、沪深300）
 数据源：东方财富 push2his API（直接调用，绕过 akshare 的 spot 查询）
 输出格式：与 eth_usdt_swap_daily_30d.json 一致的 JSON 格式
+支持：日K（默认）或 1小时K（--interval 1h --days 7）
 """
 
+import argparse
 import json
 import os
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import requests
 import pandas as pd
@@ -49,14 +51,18 @@ INDICES = [
 ]
 
 
-def fetch_index_daily(secid, name):
+# klt: 60=60分(1小时)K, 101=日K
+KLT_MAP = {"1h": "60", "60": "60", "daily": "101", "1d": "101"}
+
+
+def fetch_index_klines(secid, name, klt="101", lmt="10000"):
     """直接调用东方财富历史K线API获取指数数据"""
     url = "https://push2his.eastmoney.com/api/qt/stock/kline/get"
     params = {
         "secid": secid,
-        "klt": "101",       # 101=日K
+        "klt": klt,
         "fqt": "1",
-        "lmt": "10000",
+        "lmt": lmt,
         "end": "20500000",
         "iscca": "1",
         "fields1": "f1,f2,f3,f4,f5,f6,f7,f8",
@@ -66,7 +72,7 @@ def fetch_index_daily(secid, name):
     }
 
     print(f"请求 API: {url}")
-    print(f"secid: {secid} ({name})")
+    print(f"secid: {secid} ({name}) klt={klt}")
 
     r = requests.get(url, params=params, timeout=30)
     data_json = r.json()
@@ -97,18 +103,49 @@ def fetch_index_daily(secid, name):
     return df
 
 
-def download_index_daily(index_config):
-    """下载指数日K线数据并保存为 JSON"""
+def _parse_datetime(date_str, is_hourly):
+    """解析日期字符串，支持 1h 的 'YYYY-MM-DD HH:MM' 或日K的 'YYYY-MM-DD'"""
+    s = str(date_str).strip()
+    for fmt in ("%Y-%m-%d %H:%M", "%Y-%m-%d %H:%M:%S", "%Y-%m-%d"):
+        try:
+            return datetime.strptime(s, fmt)
+        except ValueError:
+            continue
+    raise ValueError(f"无法解析日期: {date_str}")
+
+
+def download_index_data(index_config, interval="daily", days=None):
+    """下载指数K线数据并保存为 JSON
+    interval: 'daily'|'1h'  周期
+    days: 仅当 interval='1h' 时有效，限制最近 N 天的数据
+    """
 
     name = index_config["name"]
     secid = index_config["secid"]
-    start_date = index_config["start_date"]
-    end_date = datetime.now().strftime("%Y-%m-%d")
     output_filename = index_config["output_filename"]
 
-    print(f"\n{'='*50}")
-    print(f"正在下载{name} ({secid}) 日K线数据...")
-    print(f"时间范围: {start_date} ~ {end_date}\n")
+    is_hourly = interval in ("1h", "60")
+    klt = KLT_MAP.get(interval, "101")
+
+    if is_hourly:
+        # 1小时K：7天约 7*6 交易时段 ≈ 42 条，请求 300 条确保足够
+        lmt = "500"
+        if days:
+            end_date = datetime.now()
+            start_date = end_date - timedelta(days=days)
+        else:
+            start_date = datetime.now() - timedelta(days=7)
+            end_date = datetime.now()
+        print(f"\n{'='*50}")
+        print(f"正在下载{name} ({secid}) 1小时K线数据...")
+        print(f"时间范围: 最近 {days or 7} 天\n")
+    else:
+        lmt = "10000"
+        start_date_str = index_config["start_date"]
+        end_date_str = datetime.now().strftime("%Y-%m-%d")
+        print(f"\n{'='*50}")
+        print(f"正在下载{name} ({secid}) 日K线数据...")
+        print(f"时间范围: {start_date_str} ~ {end_date_str}\n")
 
     # 带重试下载
     df = None
@@ -116,7 +153,7 @@ def download_index_daily(index_config):
     for attempt in range(1, max_retries + 1):
         try:
             print(f"第 {attempt}/{max_retries} 次尝试...")
-            df = fetch_index_daily(secid, name)
+            df = fetch_index_klines(secid, name, klt=klt, lmt=lmt)
             if df is not None and not df.empty:
                 break
         except Exception as e:
@@ -133,15 +170,31 @@ def download_index_daily(index_config):
     print(f"\n原始数据共 {len(df)} 条")
 
     # 筛选日期范围
-    df = df[(df["date"] >= start_date) & (df["date"] <= end_date)]
-    df = df.sort_values("date").reset_index(drop=True)
+    if is_hourly:
+        def in_range(x):
+            try:
+                dt = _parse_datetime(x, True)
+                return start_date <= dt <= end_date
+            except Exception:
+                return False
 
+        df["_parsed"] = df["date"].apply(lambda x: _parse_datetime(x, True))
+        df = df[(df["_parsed"] >= start_date) & (df["_parsed"] <= end_date)]
+        df = df.drop(columns=["_parsed"])
+        # 1h 输出文件名
+        output_filename = output_filename.replace(".json", f"_1h_{days or 7}d.json")
+    else:
+        start_date_str = index_config["start_date"]
+        end_date_str = datetime.now().strftime("%Y-%m-%d")
+        df = df[(df["date"] >= start_date_str) & (df["date"] <= end_date_str)]
+
+    df = df.sort_values("date").reset_index(drop=True)
     print(f"筛选后共 {len(df)} 条数据")
 
     # 转换为目标 JSON 格式
     records = []
     for _, row in df.iterrows():
-        dt = datetime.strptime(str(row["date"]), "%Y-%m-%d")
+        dt = _parse_datetime(row["date"], is_hourly)
         timestamp_ms = str(int(dt.timestamp() * 1000))
 
         record = {
@@ -185,5 +238,27 @@ def download_index_daily(index_config):
 
 
 if __name__ == "__main__":
-    for index_config in INDICES:
-        download_index_daily(index_config)
+    parser = argparse.ArgumentParser(description="下载指数K线数据（恒生科技、恒生指数等）")
+    parser.add_argument("--interval", "-i", default="daily", choices=["daily", "1h"],
+                        help="K线周期: daily=日K, 1h=1小时K")
+    parser.add_argument("--days", "-d", type=int, default=None,
+                        help="1小时模式下限制最近 N 天数据（默认7）")
+    parser.add_argument("--index", type=str, default=None,
+                        help="仅下载指定指数，如 hstech/hsi/csi300/csi500")
+    args = parser.parse_args()
+
+    days = args.days
+    if args.interval == "1h" and days is None:
+        days = 7
+
+    # 筛选要下载的指数
+    indices = INDICES
+    if args.index:
+        idx_map = {"hstech": 0, "hsi": 1, "csi300": 2, "csi500": 3}
+        i = idx_map.get(args.index.lower())
+        if i is not None:
+            indices = [INDICES[i]]
+        else:
+            print(f"未知指数: {args.index}，将下载全部")
+    for index_config in indices:
+        download_index_data(index_config, interval=args.interval, days=days)
